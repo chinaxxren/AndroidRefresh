@@ -47,7 +47,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
     PullStateFinished
 };
 
-@interface AndroidRefresh () {
+@interface AndroidRefresh () <UIGestureRecognizerDelegate> {
     dispatch_once_t _initConstraits;
     NSLayoutConstraint *_topConstrait;
 
@@ -58,13 +58,17 @@ typedef NS_ENUM(NSUInteger, PullState) {
     UIView *_container;
     CGFloat _marginTop;
 
+    // 是否正在拖动中
     BOOL _isDragging;
+
+    //  AndroidRefresh是否拉到最大位置
     BOOL _isFullyPulled;
     PullState _pullState;
 
     NSInteger _colorIndex;
-    CGFloat _startOffSetY;
-    CGPoint _location;
+    CGFloat _firstMoveY;
+    CGFloat _offsetMinY;
+    CGPoint _move;
 }
 @end
 
@@ -213,10 +217,6 @@ typedef NS_ENUM(NSUInteger, PullState) {
     return self;
 }
 
-- (void)drawRect:(CGRect)rect {
-    [super drawRect:rect];
-}
-
 - (void)didMoveToSuperview {
     if (self.superview != nil) {
         dispatch_once(&_initConstraits, ^{
@@ -248,24 +248,18 @@ typedef NS_ENUM(NSUInteger, PullState) {
         _scrollView = scrollView;
         _scrollView.bounces = NO;
 
-        if (scrollView) {
-            [scrollView addObserver:self
-                         forKeyPath:@"contentOffset"
-                            options:NSKeyValueObservingOptionNew
-                            context:nil];
-            [scrollView addObserver:self
-                         forKeyPath:@"pan.state"
-                            options:NSKeyValueObservingOptionNew
-                            context:nil];
-        }
+        UIPanGestureRecognizer *panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panAction:)];
+        panGestureRecognizer.delegate = self;
+        [_scrollView addGestureRecognizer:panGestureRecognizer];
     }
 
     return self;
 }
 
-- (void)dealloc {
-    [_scrollView removeObserver:self forKeyPath:@"contentOffset"];
-    [_scrollView removeObserver:self forKeyPath:@"pan.state"];
+#pragma mark - UIGestureRecognizerDelegate
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
 }
 
 - (void)setMarginTop:(CGFloat)topMargin {
@@ -285,35 +279,26 @@ typedef NS_ENUM(NSUInteger, PullState) {
     view.center = CGPointMake(view.center.x - transition.x, view.center.y - transition.y);
 }
 
-- (void)observeValueForKeyPath:(NSString *)keyPath
-                      ofObject:(id)object
-                        change:(NSDictionary *)change
-                       context:(void *)context {
+- (void)panAction:(UIPanGestureRecognizer *)sender {
 
-    if ([keyPath isEqualToString:@"contentOffset"]) {
-        UIPanGestureRecognizer *panGesture = [_scrollView valueForKey:@"pan"];
-        _location = [panGesture locationInView:panGesture.view];
-        switch (panGesture.state) {
-            case UIGestureRecognizerStateBegan:
-                _startOffSetY = _location.y;
-                break;
-            case UIGestureRecognizerStateChanged:
-                _location.y = (_location.y - _startOffSetY) * -0.75f;
-                break;
-            default:
-                break;
+    if (_pullState == PullStateRefreshing) {
+        return;
+    }
+
+    _move = [sender translationInView:_scrollView];
+    switch (sender.state) {
+
+        case UIGestureRecognizerStateBegan: {
+            _firstMoveY = _move.y;
+            _offsetMinY = MIN(_scrollView.contentOffset.y, _offsetMinY);
+            break;
         }
 
-        [self scrollViewDidScroll:_location];
+        case UIGestureRecognizerStateChanged: {
+            _move.y = (_move.y - _firstMoveY) * -0.75f;
 
-    } else if ([keyPath isEqualToString:@"pan.state"]) {
-        if (_pullState == PullStateRefreshing)
-            return;
-
-        NSInteger state = [[change valueForKey:NSKeyValueChangeNewKey] integerValue];
-        if (state == UIGestureRecognizerStateChanged) {
             if (_pullState == PullStateFinished) {
-                if (_location.y > -10 + _marginTop) {
+                if (_scrollView.contentOffset.y == _offsetMinY + _marginTop) {
                     _isDragging = YES;
                     _pullState = PullStateDragging;
                 }
@@ -322,17 +307,24 @@ typedef NS_ENUM(NSUInteger, PullState) {
                 _pullState = PullStateDragging;
             }
 
-        } else if (state == UIGestureRecognizerStateEnded) {
+            [self draggingView:_move];
 
-            if (_pullState != PullStateDragging)
+            break;
+        }
+
+        case UIGestureRecognizerStateEnded: {
+            if (_pullState != PullStateDragging) {
                 return;
+            }
 
             _isDragging = NO;
             if (_isFullyPulled) {
+                // 进入刷新状态，开始动画
                 _pullState = PullStateRefreshing;
                 [UIView animateWithDuration:.2f
                                  animations:^{
-                                     _topConstrait.constant = 10 - _marginTop;
+                                     // refreshview 调整到刷新真正位置
+                                     _topConstrait.constant = 40 - _marginTop;
                                      [self.superview layoutIfNeeded];
                                  }];
                 [self startAnimating];
@@ -340,6 +332,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
             } else {
                 [UIView animateWithDuration:0.2
                                  animations:^{
+                                     // 没有达到触发刷新,回调整到 refreshview 最开始的位置
                                      _topConstrait.constant = -50 - _marginTop;
                                      [self.superview layoutIfNeeded];
                                  }
@@ -347,25 +340,31 @@ typedef NS_ENUM(NSUInteger, PullState) {
                                      _pathLayer.strokeColor = ((UIColor *) self.colors[_colorIndex]).CGColor;
                                  }];
             }
+            break;
         }
+
+        default:
+            break;
     }
 }
 
-- (void)scrollViewDidScroll:(CGPoint)contentOffset {
+- (void)draggingView:(CGPoint)offset {
     if (_pullState == PullStateRefreshing)
         return;
 
-    float newY = -contentOffset.y - 50;
+    CGFloat newY = -offset.y - 50.0f;
 
-    if (contentOffset.y - _marginTop > -100) {
+    // refreshview 下拉的最大的130距离，超过此距离就只剪头转动动画
+    if (offset.y - _marginTop > -130.0f) {
         _isFullyPulled = NO;
 
         _pathLayer.strokeColor = ((UIColor *) self.colors[_colorIndex]).CGColor;
         _arrowLayer.strokeColor = ((UIColor *) self.colors[_colorIndex]).CGColor;
 
-        [self updateWithPoint:contentOffset outside:NO];
+        [self draggingAnimatingWithPoint:offset outside:NO];
 
         if (_isDragging) {
+            // 下拉过程中刷新 view 向下移动
             _topConstrait.constant = newY;
             [self layoutIfNeeded];
         }
@@ -373,17 +372,18 @@ typedef NS_ENUM(NSUInteger, PullState) {
     } else {
         _isFullyPulled = YES;
 
-        [self updateWithPoint:contentOffset outside:YES];
+        [self draggingAnimatingWithPoint:offset outside:YES];
     }
 }
 
-- (void)updateWithPoint:(CGPoint)point outside:(BOOL)flag {
+// outside 表示刷新的View是否已经达到最大位移
+- (void)draggingAnimatingWithPoint:(CGPoint)point outside:(BOOL)outside {
 
     CGFloat angle = -(point.y - _marginTop) / 130;
 
     _container.layer.transform = CATransform3DMakeRotation(angle * 10, 0, 0, 1);
 
-    if (!flag && _pullState == PullStateDragging) {
+    if (!outside && _pullState == PullStateDragging) {
         [self showView];
 
         [CATransaction begin];
@@ -394,6 +394,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
     }
 }
 
+// 开始多种颜色转圈动画
 - (void)startAnimating {
     float currentAngle = [(NSNumber *) [_container.layer valueForKeyPath:@"transform.rotation.z"] floatValue];
     CABasicAnimation *animation = [CABasicAnimation animation];
@@ -520,7 +521,8 @@ typedef NS_ENUM(NSUInteger, PullState) {
                          _pullState = PullStateFinished;
                          _colorIndex = 0;
                          _pathLayer.strokeColor = ((UIColor *) self.colors[_colorIndex]).CGColor;
-
+                         NSLog(@"~~~~~~~~~~~~~~~  4 ~~~~~~~~~~~~~~~~~");
+                         // 刷新动画结束后view的的位置
                          _topConstrait.constant = -50 + _marginTop;
                      }];
 }
@@ -535,7 +537,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
                      animations:^{
                          self.layer.opacity = 1;
                          self.layer.transform = CATransform3DMakeScale(1, 1, 1);
-
+                         NSLog(@"~~~~~~~~~~~~~~~  5 ~~~~~~~~~~~~~~~~~");
                          _topConstrait.constant = 10 - _marginTop;
                          [self layoutIfNeeded];
 

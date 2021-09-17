@@ -24,11 +24,15 @@ static NSString *identiferCell = @"identiferCell";
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.count = 20;
+    self.count = 0;
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:identiferCell];
     self.tableView.tableFooterView = [UIView new];
     
+    [self refreshDemo1];
+}
+
+- (void)refreshDemo1 {
     refresh = [[AndroidRefresh alloc] initWithScrollView:self.tableView];
     [self.view addSubview:refresh];
 
@@ -39,11 +43,6 @@ static NSString *identiferCell = @"identiferCell";
     ]];
 
     [refresh addTarget:self action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
-}
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    
 }
 
 #pragma mark - Table view data source
@@ -74,7 +73,7 @@ static NSString *identiferCell = @"identiferCell";
     [refresh endRefreshing];
     
     NSLog(@"end refresh");
-    self.count = self.count + 20;
+    self.count = self.count + 200;
     [self.tableView reloadData];
 }
 
