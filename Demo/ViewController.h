@@ -1,15 +1,11 @@
 //
-//  ViewController.h
-//  Demo
-//
-//  Created by Jiangmingz on 2016/6/30.
-//  Copyright © 2016年 Jiangmingz. All rights reserved.
+// Created by 赵江明 on 2021/9/17.
+// Copyright (c) 2021 Jiangmingz. All rights reserved.
 //
 
 #import <UIKit/UIKit.h>
 
-@interface ViewController : UITableViewController
 
+@interface ViewController : UIViewController
 
 @end
-

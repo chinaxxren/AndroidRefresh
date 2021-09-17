@@ -9,13 +9,12 @@
 #import "ViewController.h"
 #import "AndroidRefresh.h"
 
-static NSString *identiferCell = @"identiferCell";
-
 @interface ViewController () {
-    AndroidRefresh *refresh;
+    AndroidRefresh *_androidRefresh;
 }
 
-@property (nonatomic,assign) NSInteger count;
+@property(nonatomic, assign) NSInteger count;
+@property(nonatomic, strong) UILabel *redLabel;
 
 @end
 
@@ -24,57 +23,51 @@ static NSString *identiferCell = @"identiferCell";
 - (void)viewDidLoad {
     [super viewDidLoad];
 
+    self.edgesForExtendedLayout = UIRectEdgeNone;
+    self.extendedLayoutIncludesOpaqueBars = NO;
+    self.automaticallyAdjustsScrollViewInsets = NO;
+
+    UIView *panView = [[UIView alloc] initWithFrame:self.view.bounds];
+    panView.backgroundColor = [UIColor grayColor];
+    [self.view addSubview:panView];
+
     self.count = 0;
-    
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:identiferCell];
-    self.tableView.tableFooterView = [UIView new];
-    
-    [self refreshDemo1];
-}
+    self.redLabel = [[UILabel alloc] initWithFrame:CGRectMake((self.view.bounds.size.width - 100) * 0.5f, 150, 100, 100)];
+    self.redLabel.textAlignment = NSTextAlignmentCenter;
+    self.redLabel.textColor = [UIColor whiteColor];
+    self.redLabel.backgroundColor = [UIColor redColor];
+    self.redLabel.font = [UIFont boldSystemFontOfSize:20];
+    self.redLabel.text = [NSString stringWithFormat:@"%zd", self.count];
+    [panView addSubview:self.redLabel];
 
-- (void)refreshDemo1 {
-    refresh = [[AndroidRefresh alloc] initWithScrollView:self.tableView];
-    [self.view addSubview:refresh];
+    _androidRefresh = [[AndroidRefresh alloc] initWithPanView:panView];
+    [_androidRefresh setColors:@[[UIColor redColor], [UIColor greenColor], [UIColor blueColor],]];
+    [_androidRefresh addTarget:self action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:_androidRefresh];
 
-    [refresh setColors:@[
-            [UIColor redColor],
-            [UIColor greenColor],
-            [UIColor blueColor],
-    ]];
-
-    [refresh addTarget:self action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
-}
-
-#pragma mark - Table view data source
-
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.count;
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identiferCell forIndexPath:indexPath];
-    cell.textLabel.text = [NSString stringWithFormat:@"Cell %zd",indexPath.row + self.count];
-    return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"手动刷新"
+                                                                              style:UIBarButtonItemStylePlain
+                                                                             target:self
+                                                                             action:@selector(startRefreshing)];
+    self.view.backgroundColor = [UIColor grayColor];
 }
 
 - (void)refresh:(id)sender {
-    NSLog(@"begin refresh");
-    
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [self endRefreshing];
     });
 }
 
+- (void)startRefreshing {
+    [_androidRefresh startCenterRefresh];
+}
+
 - (void)endRefreshing {
-    [refresh endRefreshing];
-    
-    NSLog(@"end refresh");
-    self.count = self.count + 200;
-    [self.tableView reloadData];
+    [_androidRefresh endRefresh];
+
+    self.count = self.count + 2;
+    self.redLabel.text = [NSString stringWithFormat:@"%zd", self.count];
 }
 
 @end

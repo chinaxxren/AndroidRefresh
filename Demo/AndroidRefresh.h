@@ -22,15 +22,20 @@
 
 @interface AndroidRefresh : UIControl
 
+@property(nonatomic, assign) CGFloat refreshStartY;
+@property(nonatomic, assign) CGFloat refreshingY;
+@property(nonatomic, assign) CGFloat refreshEndY;
+
 @property(nonatomic, retain, setter=setColors:) NSArray *colors;
 
-- (id)initWithScrollView:(UIScrollView *)scrollView;
+- (id)initWithPanView:(UIView *)panView;
 
-- (void)startRefreshing;
+- (void)startRefresh;
 
-- (void)endRefreshing;
+- (void)startCenterRefresh;
 
-// in case when navigation bar is not tranparent set 0
+- (void)endRefresh;
+
 - (void)setMarginTop:(CGFloat)topMargin;
 
 @end

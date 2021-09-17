@@ -51,7 +51,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
     dispatch_once_t _initConstraits;
     NSLayoutConstraint *_topConstrait;
 
-    UIScrollView *_scrollView;
+    UIView *_panView;
 
     CAShapeLayer *_pathLayer;
     CAShapeLayer *_arrowLayer;
@@ -74,12 +74,14 @@ typedef NS_ENUM(NSUInteger, PullState) {
 
 @implementation AndroidRefresh
 
-- (id)init {
-    if (self = [super init]) {
+- (instancetype)init {
+    self = [super init];
+    if (self) {
         self.backgroundColor = [UIColor clearColor];
-
+        self.refreshStartY = -50;
+        self.refreshingY = 40;
+        self.refreshEndY = 130;
         self.layer.opacity = 0;
-
         self.colors = @[self.tintColor];
 
         UIView *view = [[UIView alloc] init];
@@ -217,6 +219,24 @@ typedef NS_ENUM(NSUInteger, PullState) {
     return self;
 }
 
+- (id)initWithPanView:(UIView *)panView {
+    self = [self init];
+    if (self) {
+        if ([panView isKindOfClass:[UIScrollView class]]) {
+            UIScrollView *scrollView = (UIScrollView *) panView;
+            scrollView.bounces = NO;
+        }
+
+        UIPanGestureRecognizer *panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panAction:)];
+        panGestureRecognizer.delegate = self;
+        [panView addGestureRecognizer:panGestureRecognizer];
+
+        _panView = panView;
+    }
+
+    return self;
+}
+
 - (void)didMoveToSuperview {
     if (self.superview != nil) {
         dispatch_once(&_initConstraits, ^{
@@ -240,20 +260,6 @@ typedef NS_ENUM(NSUInteger, PullState) {
             [self.superview addConstraint:centerXConstrait];
         });
     }
-}
-
-- (id)initWithScrollView:(UIScrollView *)scrollView {
-    self = [self init];
-    if (self) {
-        _scrollView = scrollView;
-        _scrollView.bounces = NO;
-
-        UIPanGestureRecognizer *panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panAction:)];
-        panGestureRecognizer.delegate = self;
-        [_scrollView addGestureRecognizer:panGestureRecognizer];
-    }
-
-    return self;
 }
 
 #pragma mark - UIGestureRecognizerDelegate
@@ -285,12 +291,15 @@ typedef NS_ENUM(NSUInteger, PullState) {
         return;
     }
 
-    _move = [sender translationInView:_scrollView];
+    _move = [sender translationInView:_panView];
     switch (sender.state) {
 
         case UIGestureRecognizerStateBegan: {
             _firstMoveY = _move.y;
-            _offsetMinY = MIN(_scrollView.contentOffset.y, _offsetMinY);
+            if ([_panView isKindOfClass:[UIScrollView class]]) {
+                UIScrollView *scrollView = (UIScrollView *) _panView;
+                _offsetMinY = MIN(scrollView.contentOffset.y, _offsetMinY);
+            } 
             break;
         }
 
@@ -298,7 +307,13 @@ typedef NS_ENUM(NSUInteger, PullState) {
             _move.y = (_move.y - _firstMoveY) * -0.75f;
 
             if (_pullState == PullStateFinished) {
-                if (_scrollView.contentOffset.y == _offsetMinY + _marginTop) {
+                if ([_panView isKindOfClass:[UIScrollView class]]) {
+                    UIScrollView *scrollView = (UIScrollView *) _panView;
+                    if (scrollView.contentOffset.y == _offsetMinY + _marginTop) {
+                        _isDragging = YES;
+                        _pullState = PullStateDragging;
+                    }
+                } else {
                     _isDragging = YES;
                     _pullState = PullStateDragging;
                 }
@@ -324,7 +339,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
                 [UIView animateWithDuration:.2f
                                  animations:^{
                                      // refreshview 调整到刷新真正位置
-                                     _topConstrait.constant = 40 - _marginTop;
+                                     _topConstrait.constant = self.refreshingY - _marginTop;
                                      [self.superview layoutIfNeeded];
                                  }];
                 [self startAnimating];
@@ -333,7 +348,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
                 [UIView animateWithDuration:0.2
                                  animations:^{
                                      // 没有达到触发刷新,回调整到 refreshview 最开始的位置
-                                     _topConstrait.constant = -50 - _marginTop;
+                                     _topConstrait.constant = self.refreshStartY - _marginTop;
                                      [self.superview layoutIfNeeded];
                                  }
                                  completion:^(BOOL finished) {
@@ -355,7 +370,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
     CGFloat newY = -offset.y - 50.0f;
 
     // refreshview 下拉的最大的130距离，超过此距离就只剪头转动动画
-    if (offset.y - _marginTop > -130.0f) {
+    if (offset.y - _marginTop > -self.refreshEndY) {
         _isFullyPulled = NO;
 
         _pathLayer.strokeColor = ((UIColor *) self.colors[_colorIndex]).CGColor;
@@ -389,7 +404,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
         _pathLayer.strokeStart = 1 - angle;
-        self.layer.opacity = angle * 2;
+        self.layer.opacity = (float) (angle * 2.0f);
         [CATransaction commit];
     }
 }
@@ -411,16 +426,14 @@ typedef NS_ENUM(NSUInteger, PullState) {
     beginHeadAnimation.duration = .5f;
     beginHeadAnimation.fromValue = @(.25f);
     beginHeadAnimation.toValue = @(1.f);
-    beginHeadAnimation.timingFunction =
-            [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    beginHeadAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     CABasicAnimation *beginTailAnimation = [CABasicAnimation animation];
     beginTailAnimation.keyPath = @"strokeEnd";
     beginTailAnimation.duration = .5f;
     beginTailAnimation.fromValue = @(1.f);
     beginTailAnimation.toValue = @(1.f);
-    beginTailAnimation.timingFunction =
-            [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    beginTailAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     CABasicAnimation *endHeadAnimation = [CABasicAnimation animation];
     endHeadAnimation.keyPath = @"strokeStart";
@@ -428,8 +441,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
     endHeadAnimation.duration = 1.f;
     endHeadAnimation.fromValue = @(.0f);
     endHeadAnimation.toValue = @(.25f);
-    endHeadAnimation.timingFunction =
-            [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    endHeadAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     CABasicAnimation *endTailAnimation = [CABasicAnimation animation];
     endTailAnimation.keyPath = @"strokeEnd";
@@ -437,8 +449,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
     endTailAnimation.duration = 1.f;
     endTailAnimation.fromValue = @(0.f);
     endTailAnimation.toValue = @(1.f);
-    endTailAnimation.timingFunction =
-            [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    endTailAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     CAAnimationGroup *animations = [CAAnimationGroup animation];
     [animations setDuration:1.5f];
@@ -521,34 +532,41 @@ typedef NS_ENUM(NSUInteger, PullState) {
                          _pullState = PullStateFinished;
                          _colorIndex = 0;
                          _pathLayer.strokeColor = ((UIColor *) self.colors[_colorIndex]).CGColor;
-                         NSLog(@"~~~~~~~~~~~~~~~  4 ~~~~~~~~~~~~~~~~~");
                          // 刷新动画结束后view的的位置
-                         _topConstrait.constant = -50 + _marginTop;
+                         _topConstrait.constant = self.refreshStartY + _marginTop;
                      }];
 }
 
-- (void)startRefreshing {
+- (void)startRefresh {
+    [self startRefreshWithRefreshY:self.refreshingY - _marginTop];
+}
+
+- (void)startCenterRefresh {
+    [self startRefreshWithRefreshY:_panView.center.y - 20.0f];
+}
+
+- (void)startRefreshWithRefreshY:(CGFloat)refreshingY {
     _pullState = PullStateRefreshing;
+    
+    _topConstrait.constant = refreshingY - _marginTop;
     self.layer.transform = CATransform3DMakeScale(0, 0, 1);
-    _topConstrait.constant = 30 - _marginTop;
     [self layoutIfNeeded];
 
     [UIView animateWithDuration:.6f
                      animations:^{
                          self.layer.opacity = 1;
                          self.layer.transform = CATransform3DMakeScale(1, 1, 1);
-                         NSLog(@"~~~~~~~~~~~~~~~  5 ~~~~~~~~~~~~~~~~~");
-                         _topConstrait.constant = 10 - _marginTop;
-                         [self layoutIfNeeded];
-
                      }
-                     completion:nil];
+                     completion:^(BOOL finished) {
 
-    [self startAnimating];
+                     }];
+
     [self hideArrow];
+    [self startAnimating];
+    [self sendActionsForControlEvents:UIControlEventValueChanged];
 }
 
-- (void)endRefreshing {
+- (void)endRefresh {
     [self hideView];
 }
 
