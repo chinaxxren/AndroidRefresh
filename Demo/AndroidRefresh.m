@@ -227,6 +227,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
             scrollView.bounces = NO;
         }
 
+        // 拖动手势
         UIPanGestureRecognizer *panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panAction:)];
         panGestureRecognizer.delegate = self;
         [panView addGestureRecognizer:panGestureRecognizer];
@@ -299,7 +300,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
             if ([_panView isKindOfClass:[UIScrollView class]]) {
                 UIScrollView *scrollView = (UIScrollView *) _panView;
                 _offsetMinY = MIN(scrollView.contentOffset.y, _offsetMinY);
-            } 
+            }
             break;
         }
 
@@ -547,7 +548,7 @@ typedef NS_ENUM(NSUInteger, PullState) {
 
 - (void)startRefreshWithRefreshY:(CGFloat)refreshingY {
     _pullState = PullStateRefreshing;
-    
+
     _topConstrait.constant = refreshingY - _marginTop;
     self.layer.transform = CATransform3DMakeScale(0, 0, 1);
     [self layoutIfNeeded];
