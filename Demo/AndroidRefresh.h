@@ -1,7 +1,6 @@
 
 #import <UIKit/UIKit.h>
 
-
 @interface AndroidTimerTarget : NSObject
 
 @property(nonatomic, weak) id target;

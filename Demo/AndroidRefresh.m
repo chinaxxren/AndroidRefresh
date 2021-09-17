@@ -1,5 +1,4 @@
 
-
 #import "AndroidRefresh.h"
 
 @implementation AndroidTimerTarget
